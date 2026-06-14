@@ -390,13 +390,13 @@ with tab0:
     st.markdown(
         """
         <div class="insight">
-        <strong>1. 검거율은 교통범죄 발생건수와 유의미한 관계를 보인다.</strong><br>
+        1. 검거율은 교통범죄 발생건수와 유의미한 관계를 보인다.<br>
         </div>
         <div class="insight">
-        <strong>2. CCTV 신규 설치, 구간단속 신규 설치, 도로 포장률은 단독 원인보다 환경 요인으로 보는 것이 자연스럽다.</strong><br>
+        2. CCTV 신규 설치, 구간단속 신규 설치, 도로 포장률은 단독 원인보다 환경 요인으로 보는 것이 자연스럽다.<br>
         </div>
         <div class="insight">
-        <strong>3. 몇몇 변수들은 시간에 따라 증가만 있기에, 단순 그래프만으로 인과관계를 판단하기 어렵다.</strong><br>
+        3. 몇몇 변수들은 시간에 따라 증가만 있기에, 단순 그래프만으로 인과관계를 판단하기 어렵다.<br>
         </div>
         """,
         unsafe_allow_html=True,

@@ -361,7 +361,7 @@ with tab0:
         """
         <div class="insight">
         <strong>주제</strong><br>
-        공공데이터를 활용해 교통범죄 발생건수 감소에 영향을 미친 요인을 분석합니다.
+        공공데이터를 활용해 교통범죄 발생건수 감소에 영향을 미친 요인을 분석.
         </div>
         <div class="insight">
         <strong>가설</strong><br>
@@ -386,20 +386,17 @@ with tab0:
         unsafe_allow_html=True,
     )
 
-    section_title("핵심 해석")
+    section_title("해석")
     st.markdown(
         """
         <div class="insight">
-        <strong>1. 2016~2018년에 교통범죄 발생건수가 크게 감소했습니다.</strong><br>
-        이 시기에는 난폭운전 처벌 강화 이후 단속 강화 분위기, 무인단속 장비 확대, 교통안전 정책 확산이 함께 나타났습니다.
+        <strong>1. 검거율은 교통범죄 발생건수와 유의미한 관계를 보인다.</strong><br>
         </div>
         <div class="insight">
-        <strong>2. 검거율은 교통범죄 발생건수와 뚜렷한 관계를 보입니다.</strong><br>
-        다만 검거율은 발생건수를 기준으로 계산되므로, 검거율 상승이 직접적인 원인이라고 단정하기보다 단속 강화의 신호로 해석하는 것이 적절합니다.
+        <strong>2. CCTV 신규 설치, 구간단속 신규 설치, 도로 포장률은 단독 원인보다 환경 요인으로 보는 것이 자연스럽다.</strong><br>
         </div>
         <div class="insight">
-        <strong>3. CCTV 신규 설치, 구간단속 신규 설치, 도로 포장률은 단독 원인보다 환경 요인으로 보는 것이 자연스럽습니다.</strong><br>
-        장비와 도로환경은 장기적으로 운전자 행동을 바꾸는 요인일 수 있으므로, 발생건수와 함께 누적 추세를 보는 것이 중요합니다.
+        <strong>3. 몇몇 변수들은 시간에 따라 증가만 있기에, 단순 그래프만으로 인과관계를 판단하기 어렵다.</strong><br>
         </div>
         """,
         unsafe_allow_html=True,

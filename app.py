@@ -220,7 +220,7 @@ def indexed_chart(data: pd.DataFrame) -> go.Figure:
         base_value = usable.loc[usable["연도"] == 2015, col].iloc[0]
         fig.add_trace(go.Scatter(x=usable["연도"], y=usable[col] / base_value * 100, name=label, mode="lines+markers"))
     fig.update_layout(
-        title=dict(text="2015년=100 기준 변화 비교", x=0.5, xanchor="center", font=dict(size=23)),
+        title=dict(text="2015년 기준 변화 비교", x=0.5, xanchor="center", font=dict(size=23)),
         height=470,
         margin=dict(l=70, r=35, t=80, b=55),
         legend=dict(orientation="h", y=1.12, x=0),
@@ -229,7 +229,7 @@ def indexed_chart(data: pd.DataFrame) -> go.Figure:
         plot_bgcolor="white",
     )
     fig.update_xaxes(title_text="연도", dtick=1, showgrid=True, gridcolor="#e5e7eb")
-    fig.update_yaxes(title_text="2015년=100", showgrid=True, gridcolor="#e5e7eb")
+    fig.update_yaxes(title_text="2015년 기준 변화", showgrid=True, gridcolor="#e5e7eb")
     return fig
 
 

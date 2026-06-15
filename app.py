@@ -229,7 +229,7 @@ def indexed_chart(data: pd.DataFrame) -> go.Figure:
         plot_bgcolor="white",
     )
     fig.update_xaxes(title_text="연도", dtick=1, showgrid=True, gridcolor="#e5e7eb")
-    fig.update_yaxes(title_text="2015년 기준 변화", showgrid=True, gridcolor="#e5e7eb")
+    fig.update_yaxes(title_text="2015년 기준", showgrid=True, gridcolor="#e5e7eb")
     return fig
 
 
@@ -274,11 +274,22 @@ with st.sidebar:
         "음주운전 사고": ("음주운전 사고(천 건)", "음주운전 사고(천 건)"),
         "뺑소니 사고": ("뺑소니 사고(천 건)", "뺑소니 사고(천 건)"),
     }
+    if camera_mode == "누적 설치 수":
+        sidebar_cctv_name = "CCTV 누적 설치 대수"
+        sidebar_cctv_option = ("CCTV 누적 카메라대수(만 대)", "CCTV 누적 설치 대수(만 대)", None)
+        sidebar_section_name = "구간단속 누적 설치 수"
+        sidebar_section_option = ("구간단속 누적 카메라수(천 개)", "구간단속 누적 설치 수(천 개)", None)
+    else:
+        sidebar_cctv_name = "CCTV 신규 설치 대수"
+        sidebar_cctv_option = ("CCTV 카메라대수(만 대)", "CCTV 신규 설치 대수(만 대)", [0, 5])
+        sidebar_section_name = "구간단속 신규 설치 수"
+        sidebar_section_option = ("구간단속 카메라수(천 개)", "구간단속 신규 설치 수(천 개)", [0, 8])
+
     factor_options = {
         "검거율": ("검거율(%)", "검거율(%)", [60, 100]),
         "자동차 등록대수": ("자동차 등록대수(백만 대)", "자동차(백만 대)", [15, 27]),
-        "CCTV 신규 설치 대수": ("CCTV 카메라대수(만 대)", "CCTV 신규 설치(만 대)", [0, 5]),
-        "구간단속 신규 설치 수": ("구간단속 카메라수(천 개)", "구간단속 신규 설치(천 개)", [0, 8]),
+        sidebar_cctv_name: sidebar_cctv_option,
+        sidebar_section_name: sidebar_section_option,
         "도로 포장률": ("도로 포장률(%)", "도로 포장률(%)", [85, 100]),
     }
     selected_count_graphs = st.multiselect(
@@ -356,7 +367,7 @@ with card3:
 tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs(["개요", "추세", "1대1 비교", "세부 비교", "상관계수", "데이터"])
 
 with tab0:
-    section_title("연구 개요")
+    section_title("분석 주제")
     st.markdown(
         """
         <div class="insight">
@@ -380,6 +391,7 @@ with tab0:
         2. 이중축 그래프를 통한 1대1 비교<br>
         3. 세부 사고 지표와 단속·환경 요인의 조합 비교<br>
         4. 상관계수로 함께 움직이는 정도 확인<br>
+        5. 2016~2018년 정책 변화 시점과 감소 흐름 해석
         </div>
         """,
         unsafe_allow_html=True,
@@ -389,13 +401,13 @@ with tab0:
     st.markdown(
         """
         <div class="insight">
-        1. 검거율은 교통범죄 발생건수와 유의미한 관계를 보인다.<br>
+        1. 검거율은 교통범죄 발생건수와 유의미한 관계를 보인다.
         </div>
         <div class="insight">
-        2. CCTV 신규 설치, 구간단속 신규 설치, 도로 포장률은 단독 원인보다 환경 요인으로 보는 것이 자연스럽다.<br>
+        2. CCTV 신규 설치, 구간단속 신규 설치, 도로 포장률은 단독 원인보다 환경 요인으로 보는 것이 자연스럽다.
         </div>
         <div class="insight">
-        3. 몇몇 변수들은 시간에 따라 증가만 있기에, 단순 그래프만으로 인과관계를 판단하기 어렵다.<br>
+        3. 몇몇 변수들은 시간에 따라 증가만 있기에, 단순 그래프만으로 인과관계를 판단하기 어렵다.
         </div>
         """,
         unsafe_allow_html=True,

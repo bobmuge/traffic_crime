@@ -463,7 +463,6 @@ with tab3:
 with tab4:
     section_title("교통범죄 발생건수와의 상관계수")
     st.dataframe(corr_df.style.format({"상관계수": "{:.3f}"}), width="stretch", hide_index=True)
-    st.info("상관계수는 같이 움직이는 정도만 보여줍니다. 원인과 결과를 증명하려면 정책 변화, 시차 효과, 집계 방식까지 함께 해석해야 합니다.")
 
 with tab5:
     section_title("원자료 및 출처")

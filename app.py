@@ -239,6 +239,42 @@ def indexed_chart(data: pd.DataFrame) -> go.Figure:
     return fig
 
 
+def traffic_crime_timeline(data: pd.DataFrame) -> go.Figure:
+    chart_data = data[["연도", "교통범죄 발생건수"]].dropna()
+    fig = go.Figure(
+        go.Scatter(
+            x=chart_data["연도"],
+            y=chart_data["교통범죄 발생건수"],
+            mode="lines+markers",
+            name="교통범죄 발생건수",
+            line=dict(color="#e84a5f", width=3),
+            marker=dict(size=8),
+        )
+    )
+    if 2016 in chart_data["연도"].values:
+        fig.add_vline(x=2016, line_width=1.5, line_dash="dot", line_color="#f59e0b")
+        fig.add_annotation(
+            x=2016,
+            y=1.04,
+            yref="paper",
+            text="난폭운전 처벌·단속 강화",
+            showarrow=False,
+            textangle=-25,
+            font=dict(size=11, color="#92400e"),
+        )
+    fig.update_layout(
+        title=dict(text="연도별 교통범죄 발생건수", x=0.5, xanchor="center"),
+        height=470,
+        margin=dict(l=75, r=40, t=95, b=60),
+        plot_bgcolor="white",
+        hovermode="x unified",
+        font=dict(family="Malgun Gothic, Arial", size=13),
+    )
+    fig.update_xaxes(title_text="연도", dtick=1, showgrid=True, gridcolor="#e5e7eb")
+    fig.update_yaxes(title_text="교통범죄 발생건수", tickformat=",", showgrid=True, gridcolor="#e5e7eb")
+    return fig
+
+
 def accident_count_timeline(data: pd.DataFrame) -> go.Figure:
     chart_data = data[["연도", "전체_사고건수"]].dropna()
     fig = go.Figure(
@@ -678,8 +714,9 @@ with tab3:
                 )
 
 with tab4:
-    section_title("교통사고 감소에 영향을 준 제도와 차량 기술")
-    st.caption("연도별 교통사고 건수와 면허시험 개정, 단속 강화, 주행보조장치 보급 시점을 비교했습니다.")
+    section_title("교통범죄·교통사고 변화와 정책·차량 기술")
+    st.caption("교통범죄와 전체 교통사고의 연도별 변화에 정책 시행 및 주행보조장치 보급 시점을 함께 표시했습니다.")
+    st.plotly_chart(traffic_crime_timeline(df), width="stretch")
     st.plotly_chart(accident_count_timeline(df), width="stretch")
 
     accidents_by_year = df.set_index("연도")["전체_사고건수"]

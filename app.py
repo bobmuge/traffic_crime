@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 from pathlib import Path
-from itertools import combinations
 from math import lgamma, sqrt
 
 import numpy as np
@@ -142,8 +141,6 @@ def dual_axis_chart(
     right_title: str,
     left_range: list[float] | None = None,
     right_range: list[float] | None = None,
-    event_year: int | None = None,
-    event_label: str | None = None,
 ) -> go.Figure:
     chart_data = data[["연도", left_col, right_col]].dropna()
     fig = make_subplots(specs=[[{"secondary_y": True}]])
@@ -185,17 +182,6 @@ def dual_axis_chart(
         gridcolor="#e5e7eb",
     )
     fig.update_yaxes(title_text=right_title, range=right_range or axis_range(chart_data[right_col]), secondary_y=True)
-    if event_year is not None and event_year in chart_data["연도"].values:
-        fig.add_vline(x=event_year, line_width=2, line_dash="dash", line_color="#f59e0b")
-        fig.add_annotation(
-            x=event_year,
-            y=1.04,
-            yref="paper",
-            text=event_label or str(event_year),
-            showarrow=False,
-            font=dict(color="#b45309", size=12),
-            bgcolor="rgba(255,247,237,0.9)",
-        )
     return fig
 
 
@@ -395,40 +381,17 @@ def correlation_result(frame: pd.DataFrame, x_col: str, y_col: str) -> dict:
     }
 
 
-def welch_t_test(before: pd.Series, after: pd.Series) -> tuple[float, float, float]:
-    before_values = before.astype(float).to_numpy()
-    after_values = after.astype(float).to_numpy()
-    n_before, n_after = len(before_values), len(after_values)
-    variance_before = float(np.var(before_values, ddof=1))
-    variance_after = float(np.var(after_values, ddof=1))
-    term_before = variance_before / n_before
-    term_after = variance_after / n_after
-    standard_error = sqrt(term_before + term_after)
-    if standard_error == 0:
-        return np.nan, np.nan, np.nan
-    t_value = (float(np.mean(before_values)) - float(np.mean(after_values))) / standard_error
-    degrees_of_freedom = (term_before + term_after) ** 2 / (
-        term_before**2 / (n_before - 1) + term_after**2 / (n_after - 1)
-    )
-    return t_value, degrees_of_freedom, student_t_two_sided_p(t_value, degrees_of_freedom)
-
-
-def exact_permutation_p(before: pd.Series, after: pd.Series) -> float:
-    before_values = before.astype(float).to_numpy()
-    after_values = after.astype(float).to_numpy()
-    combined = np.concatenate([before_values, after_values])
-    before_size = len(before_values)
-    observed = abs(float(np.mean(before_values) - np.mean(after_values)))
-    extreme = 0
-    total = 0
-    all_indexes = np.arange(len(combined))
-    for selected in combinations(range(len(combined)), before_size):
-        selected_indexes = np.array(selected, dtype=int)
-        other_indexes = np.setdiff1d(all_indexes, selected_indexes, assume_unique=True)
-        difference = abs(float(np.mean(combined[selected_indexes]) - np.mean(combined[other_indexes])))
-        extreme += difference >= observed - 1e-12
-        total += 1
-    return extreme / total if total else np.nan
+def detrended_correlation_result(frame: pd.DataFrame, x_col: str, y_col: str) -> dict:
+    sample = frame[["연도", x_col, y_col]].replace([np.inf, -np.inf], np.nan).dropna()
+    if len(sample) < 4:
+        return {"n": len(sample), "pearson_r": np.nan, "pearson_p": np.nan, "spearman_r": np.nan, "spearman_p": np.nan}
+    years = sample["연도"].astype(float).to_numpy()
+    x_values = sample[x_col].astype(float).to_numpy()
+    y_values = sample[y_col].astype(float).to_numpy()
+    x_residual = x_values - np.polyval(np.polyfit(years, x_values, 1), years)
+    y_residual = y_values - np.polyval(np.polyfit(years, y_values, 1), years)
+    residuals = pd.DataFrame({"x_residual": x_residual, "y_residual": y_residual})
+    return correlation_result(residuals, "x_residual", "y_residual")
 
 
 def correlation_strength(value: float) -> str:
@@ -445,12 +408,6 @@ def correlation_strength(value: float) -> str:
         strength = "매우 약한"
     direction = "양(+)" if value >= 0 else "음(-)"
     return f"{strength} {direction} 관계"
-
-
-def p_value_text(p_value: float) -> str:
-    if pd.isna(p_value):
-        return "계산 불가"
-    return "통계적으로 유의함" if p_value < 0.05 else "통계적으로 유의하지 않음"
 
 
 def scatter_with_fit(
@@ -673,8 +630,6 @@ with tab2:
                 "검거율(%)",
                 [20, 90],
                 [60, 100],
-                event_year=2016,
-                event_label="난폭운전 단속 시행",
             ),
             width="stretch",
         )
@@ -886,26 +841,66 @@ with tab5:
     change_data[change_x_col] = change_data[selected_factor_col].pct_change(fill_method=None) * 100
     change_data[change_y_col] = change_data[selected_outcome_col].pct_change(fill_method=None) * 100
     change_result = correlation_result(change_data, change_x_col, change_y_col)
+    detrended_result = detrended_correlation_result(data, selected_factor_col, selected_outcome_col)
+
+    st.markdown(
+        """
+        <div class="method-box">
+        <b>Pearson r</b>: 두 변수의 직선형 관계. -1에 가까우면 반대 방향, +1에 가까우면 같은 방향, 0에 가까우면 관계가 약함.<br><br>
+        <b>Spearman ρ</b>: 값의 순위를 이용한 관계. 일부 연도의 큰 변동에 덜 민감하며 두 변수가 전반적으로 같은 순서로 움직이는지 확인.<br><br>
+        <b>p-value</b>: 관찰된 관계가 우연히 나타날 가능성. 0.05 미만이면 통계적으로 유의한 관계로 판정.<br><br>
+        <b>분석법 선택 이유</b>: 연도별 자료가 17개로 적어 Pearson과 Spearman을 함께 사용하고, 전년 대비 증감률과 추세 제거 분석으로 시간에 따라 함께 증가·감소하는 효과를 분리.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    def selected_result_summary(analysis_name: str, result: dict) -> str:
+        if pd.isna(result["pearson_p"]):
+            return f"<strong>{analysis_name}:</strong> 분석 가능한 연도 수 부족."
+        significance = "통계적으로 유의함" if result["pearson_p"] < 0.05 else "통계적으로 유의하지 않음"
+        return (
+            f"<strong>{analysis_name}:</strong> {selected_factor_name}과 {selected_outcome_name}은 "
+            f"{correlation_strength(result['pearson_r'])}를 보임 "
+            f"(Pearson r={result['pearson_r']:.3f}, p={result['pearson_p']:.4f}). "
+            f"결과는 <b>{significance}</b>."
+        )
 
     section_title("선택 변수 분석 결과")
     raw1, raw2, raw3, raw4 = st.columns(4)
-    raw1.metric("Pearson r", f"{raw_result['pearson_r']:.3f}" if not pd.isna(raw_result["pearson_r"]) else "-")
-    raw2.metric("Pearson p-value", f"{raw_result['pearson_p']:.4f}" if not pd.isna(raw_result["pearson_p"]) else "-")
-    raw3.metric("Spearman ρ", f"{raw_result['spearman_r']:.3f}" if not pd.isna(raw_result["spearman_r"]) else "-")
-    raw4.metric("사용 연도 수", f"{raw_result['n']}개")
-    st.info(
-        f"원자료 Pearson 분석: **{correlation_strength(raw_result['pearson_r'])}**, "
-        f"**{p_value_text(raw_result['pearson_p'])}** (p={raw_result['pearson_p']:.4f})."
-        if not pd.isna(raw_result["pearson_p"])
-        else "분석 가능한 연도 수가 부족합니다."
-    )
+    raw1.metric("선형상관계수 (Pearson r)", f"{raw_result['pearson_r']:.3f}" if not pd.isna(raw_result["pearson_r"]) else "-")
+    raw2.metric("유의확률 (p-value)", f"{raw_result['pearson_p']:.4f}" if not pd.isna(raw_result["pearson_p"]) else "-")
+    raw3.metric("순위상관계수 (Spearman ρ)", f"{raw_result['spearman_r']:.3f}" if not pd.isna(raw_result["spearman_r"]) else "-")
+    raw4.metric("분석 연도", f"{raw_result['n']}개")
+    st.markdown(f'<div class="insight">{selected_result_summary("전체 수준 비교", raw_result)}</div>', unsafe_allow_html=True)
 
     change1, change2, change3, change4 = st.columns(4)
-    change1.metric("증감률 Pearson r", f"{change_result['pearson_r']:.3f}" if not pd.isna(change_result["pearson_r"]) else "-")
-    change2.metric("증감률 p-value", f"{change_result['pearson_p']:.4f}" if not pd.isna(change_result["pearson_p"]) else "-")
-    change3.metric("증감률 Spearman ρ", f"{change_result['spearman_r']:.3f}" if not pd.isna(change_result["spearman_r"]) else "-")
-    change4.metric("증감률 연도 수", f"{change_result['n']}개")
-    st.warning("해석 기준: 원자료보다 증감률 상관계수가 크게 낮으면 공통된 시간 추세가 원자료 상관관계에 포함된 것으로 판단합니다.")
+    change1.metric("증감률 선형상관계수", f"{change_result['pearson_r']:.3f}" if not pd.isna(change_result["pearson_r"]) else "-")
+    change2.metric("증감률 유의확률", f"{change_result['pearson_p']:.4f}" if not pd.isna(change_result["pearson_p"]) else "-")
+    change3.metric("증감률 순위상관계수", f"{change_result['spearman_r']:.3f}" if not pd.isna(change_result["spearman_r"]) else "-")
+    change4.metric("분석 연도", f"{change_result['n']}개")
+    st.markdown(f'<div class="insight">{selected_result_summary("전년 대비 변화 비교", change_result)}</div>', unsafe_allow_html=True)
+
+    trend1, trend2, trend3, trend4 = st.columns(4)
+    trend1.metric("추세 제거 선형상관계수", f"{detrended_result['pearson_r']:.3f}" if not pd.isna(detrended_result["pearson_r"]) else "-")
+    trend2.metric("추세 제거 유의확률", f"{detrended_result['pearson_p']:.4f}" if not pd.isna(detrended_result["pearson_p"]) else "-")
+    trend3.metric("추세 제거 순위상관계수", f"{detrended_result['spearman_r']:.3f}" if not pd.isna(detrended_result["spearman_r"]) else "-")
+    trend4.metric("분석 연도", f"{detrended_result['n']}개")
+    st.markdown(f'<div class="insight">{selected_result_summary("연도 추세 제거 후 비교", detrended_result)}</div>', unsafe_allow_html=True)
+
+    selected_significant = {
+        "전체 수준": not pd.isna(raw_result["pearson_p"]) and raw_result["pearson_p"] < 0.05,
+        "전년 대비 변화": not pd.isna(change_result["pearson_p"]) and change_result["pearson_p"] < 0.05,
+        "연도 추세 제거": not pd.isna(detrended_result["pearson_p"]) and detrended_result["pearson_p"] < 0.05,
+    }
+    significant_names = [name for name, is_significant in selected_significant.items() if is_significant]
+    if not significant_names:
+        selected_conclusion = f"{selected_factor_name}은 세 분석 모두에서 {selected_outcome_name}과 통계적으로 유의한 관계가 확인되지 않음."
+    elif significant_names == ["전체 수준"]:
+        selected_conclusion = f"{selected_factor_name}은 장기 추세에서는 관계가 나타나지만 전년 대비 변화와 추세 제거 후에는 유의하지 않아 직접적인 영향은 확인되지 않음."
+    else:
+        selected_conclusion = f"통계적으로 유의한 분석: {', '.join(significant_names)}. 해당 조건에서 {selected_factor_name}과 {selected_outcome_name}의 관계가 확인됨."
+    st.markdown(f'<div class="insight"><strong>선택 변수 결론:</strong> {selected_conclusion}</div>', unsafe_allow_html=True)
 
     st.plotly_chart(
         scatter_with_fit(
@@ -925,6 +920,7 @@ with tab5:
         change["x_change"] = change[factor_col].pct_change(fill_method=None) * 100
         change["y_change"] = change[selected_outcome_col].pct_change(fill_method=None) * 100
         changed = correlation_result(change, "x_change", "y_change")
+        detrended = detrended_correlation_result(data, factor_col, selected_outcome_col)
         matrix_rows.append(
             {
                 "비교변수": factor_name,
@@ -932,58 +928,28 @@ with tab5:
                 "원자료 p-value": raw["pearson_p"],
                 "증감률 Pearson r": changed["pearson_r"],
                 "증감률 p-value": changed["pearson_p"],
+                "추세 제거 Pearson r": detrended["pearson_r"],
+                "추세 제거 p-value": detrended["pearson_p"],
                 "표본 수": raw["n"],
             }
         )
     matrix_df = pd.DataFrame(matrix_rows)
 
-    section_title("기준 연도 전후 차이 검정")
-    test_col1, test_col2 = st.columns(2)
-    with test_col1:
-        test_outcome_name = st.selectbox("검정할 결과변수", list(analysis_outcomes.keys()), index=0, key="test_outcome")
-    with test_col2:
-        available_years = sorted(data["연도"].dropna().astype(int).unique().tolist())
-        breakpoint_options = available_years[2:-1] if len(available_years) >= 4 else available_years
-        default_breakpoint = 2016 if 2016 in breakpoint_options else breakpoint_options[len(breakpoint_options) // 2]
-        breakpoint = st.selectbox(
-            "비교 기준 연도",
-            breakpoint_options,
-            index=breakpoint_options.index(default_breakpoint),
-            help="기준 연도는 이후 기간에 포함됩니다. 앞뒤에 최소 2개 연도가 남는 범위에서 선택할 수 있습니다.",
-        )
+    section_title("기간별 관계 분석 설정")
+    available_years = sorted(data["연도"].dropna().astype(int).unique().tolist())
+    breakpoint_options = available_years[2:-1] if len(available_years) >= 4 else available_years
+    default_breakpoint = 2016 if 2016 in breakpoint_options else breakpoint_options[len(breakpoint_options) // 2]
+    breakpoint = st.selectbox(
+        "기간 구분 연도",
+        breakpoint_options,
+        index=breakpoint_options.index(default_breakpoint),
+        help="선택한 연도부터 이후 기간으로 구분해 요인별 상관관계를 비교합니다.",
+    )
 
     before_start, before_end = available_years[0], breakpoint - 1
     after_start, after_end = breakpoint, available_years[-1]
 
-    if selected_factor_name == "검거율" and breakpoint == 2016:
-        st.success("2016년 난폭운전 단속 시행 시점을 기준으로 이전·이후 기간을 비교합니다.")
-    else:
-        st.caption("선택한 기준 연도는 이후 기간의 첫해로 포함됩니다.")
-
-    test_col = analysis_outcomes[test_outcome_name]
-    before_values = data.loc[data["연도"].between(before_start, before_end), test_col].dropna()
-    after_values = data.loc[data["연도"].between(after_start, after_end), test_col].dropna()
-    welch_p = np.nan
-    mean_change = np.nan
-
-    if len(before_values) >= 2 and len(after_values) >= 2:
-        welch_t, welch_df, welch_p = welch_t_test(before_values, after_values)
-        permutation_p = exact_permutation_p(before_values, after_values)
-        before_mean = float(before_values.mean())
-        after_mean = float(after_values.mean())
-        mean_change = (after_mean / before_mean - 1) * 100 if before_mean != 0 else np.nan
-
-        test1, test2, test3, test4 = st.columns(4)
-        test1.metric(f"이전 평균 ({before_start}–{before_end})", f"{before_mean:,.2f}")
-        test2.metric(f"이후 평균 ({after_start}–{after_end})", f"{after_mean:,.2f}", f"{mean_change:.1f}%")
-        test3.metric("Welch t-test p", f"{welch_p:.4f}")
-        test4.metric("순열검정 p", f"{permutation_p:.4f}")
-        st.info(
-            f"Welch t-test 결과, 두 기간 평균 차이는 **{p_value_text(welch_p)}**입니다. "
-            f"(t={welch_t:.3f}, 자유도={welch_df:.2f}, p={welch_p:.4f})"
-        )
-    else:
-        st.warning("선택한 결과변수에 전후 검정을 수행할 연도별 자료가 충분하지 않습니다.")
+    st.caption(f"분석 기간: {before_start}–{before_end}년 / {after_start}–{after_end}년")
 
     section_title("비교변수 전체 결과")
     st.dataframe(
@@ -993,6 +959,8 @@ with tab5:
                 "원자료 p-value": "{:.4f}",
                 "증감률 Pearson r": "{:.3f}",
                 "증감률 p-value": "{:.4f}",
+                "추세 제거 Pearson r": "{:.3f}",
+                "추세 제거 p-value": "{:.4f}",
             }
         ),
         width="stretch",
@@ -1001,14 +969,21 @@ with tab5:
 
     section_title("종합 결론")
 
-    def relationship_text(result: dict) -> str:
+    def compact_relationship(result: dict) -> str:
         if pd.isna(result["pearson_p"]):
-            return "표본 부족으로 판정 불가"
+            return "자료 부족"
         direction = "양(+)" if result["pearson_r"] >= 0 else "음(-)"
-        significance = "유의함" if result["pearson_p"] < 0.05 else "유의하지 않음"
-        return f"{direction} 관계, {significance} (r={result['pearson_r']:.3f}, p={result['pearson_p']:.4f})"
+        significance = "유의" if result["pearson_p"] < 0.05 else "비유의"
+        return f"{significance} · {direction} · r={result['pearson_r']:.3f}"
 
-    factor_cards = []
+    summary_rows = []
+    conclusion_groups = {
+        "추세 제거 후에도 유의": [],
+        "전년 대비 변화에서 유의": [],
+        "특정 기간에서만 유의": [],
+        "장기 추세에서만 유의": [],
+        "유의한 관계 없음": [],
+    }
     for factor_name, factor_col in analysis_factors.items():
         full_row = matrix_df.loc[matrix_df["비교변수"].eq(factor_name)].iloc[0]
         before_result = correlation_result(
@@ -1020,57 +995,84 @@ with tab5:
 
         full_significant = full_row["원자료 p-value"] < 0.05
         change_significant = full_row["증감률 p-value"] < 0.05
+        trend_significant = full_row["추세 제거 p-value"] < 0.05
         before_significant = not pd.isna(before_result["pearson_p"]) and before_result["pearson_p"] < 0.05
         after_significant = not pd.isna(after_result["pearson_p"]) and after_result["pearson_p"] < 0.05
 
-        if before_significant and after_significant:
-            same_direction = before_result["pearson_r"] * after_result["pearson_r"] > 0
-            if same_direction:
-                period_summary = "기준 연도 이전과 이후 모두 같은 방향의 유의한 관계 확인."
+        full_result = {
+            "pearson_r": full_row["원자료 Pearson r"],
+            "pearson_p": full_row["원자료 p-value"],
+        }
+        change_result_row = {
+            "pearson_r": full_row["증감률 Pearson r"],
+            "pearson_p": full_row["증감률 p-value"],
+        }
+        trend_result_row = {
+            "pearson_r": full_row["추세 제거 Pearson r"],
+            "pearson_p": full_row["추세 제거 p-value"],
+        }
+
+        if trend_significant:
+            raw_trend_reversed = full_significant and full_row["원자료 Pearson r"] * full_row["추세 제거 Pearson r"] < 0
+            judgment = "추세 제거 후 유의·방향 반전" if raw_trend_reversed else "추세 제거 후에도 유의"
+            group = "추세 제거 후에도 유의"
+        elif change_significant:
+            judgment = "전년 대비 변화에서 유의"
+            group = "전년 대비 변화에서 유의"
+        elif before_significant and after_significant:
+            if before_result["pearson_r"] * after_result["pearson_r"] < 0:
+                judgment = "기간별로 유의하지만 방향 반전"
             else:
-                period_summary = "기준 연도 이전과 이후 모두 유의하지만 관계 방향이 반전돼 일관된 영향은 확인되지 않음."
+                judgment = "두 기간 모두 같은 방향으로 유의"
+            group = "특정 기간에서만 유의"
         elif before_significant:
-            period_summary = f"{before_start}–{before_end}년에만 유의하며 {after_start}–{after_end}년에는 영향이 확인되지 않음."
+            judgment = f"{before_start}–{before_end}년에만 유의"
+            group = "특정 기간에서만 유의"
         elif after_significant:
-            period_summary = f"{after_start}–{after_end}년에만 유의하며 {before_start}–{before_end}년에는 영향이 확인되지 않음."
-        else:
-            period_summary = "기준 연도 이전과 이후 모두 통계적으로 유의한 영향이 확인되지 않음."
-
-        if change_significant:
-            factor_summary = "전년 대비 변화에서도 유의해 연도별 변동과 직접적인 관련성이 확인됨."
+            judgment = f"{after_start}–{after_end}년에만 유의"
+            group = "특정 기간에서만 유의"
         elif full_significant:
-            factor_summary = "전체 기간의 장기 추세에서는 유의하지만 전년 대비 변화에서는 유의하지 않아 단기적 직접 영향은 확인되지 않음."
+            judgment = "장기 추세에서만 유의"
+            group = "장기 추세에서만 유의"
         else:
-            factor_summary = "전체 기간과 전년 대비 변화 모두 유의하지 않아 이 자료에서는 독립적인 영향이 확인되지 않음."
+            judgment = "통계적으로 유의한 관계 없음"
+            group = "유의한 관계 없음"
 
-        change_direction = "양(+)" if full_row["증감률 Pearson r"] >= 0 else "음(-)"
-        change_significance_text = "유의함" if change_significant else "유의하지 않음"
-        factor_cards.append(
-            f"""
-            <div class="insight">
-            <strong>{factor_name}</strong><br>
-            <b>전체 기간:</b> {('유의함' if full_significant else '유의하지 않음')} (r={full_row['원자료 Pearson r']:.3f}, p={full_row['원자료 p-value']:.4f})<br>
-            <b>{before_start}–{before_end}년:</b> {relationship_text(before_result)}<br>
-            <b>{after_start}–{after_end}년:</b> {relationship_text(after_result)}<br>
-            <b>전년 대비 변화:</b> {change_direction} 관계, {change_significance_text} (r={full_row['증감률 Pearson r']:.3f}, p={full_row['증감률 p-value']:.4f})<br>
-            <b>결론:</b> {period_summary} {factor_summary}
-            </div>
-            """
+        conclusion_groups[group].append(factor_name)
+        summary_rows.append(
+            {
+                "요인": factor_name,
+                "전체 기간": compact_relationship(full_result),
+                f"{before_start}–{before_end}년": compact_relationship(before_result),
+                f"{after_start}–{after_end}년": compact_relationship(after_result),
+                "전년 대비": compact_relationship(change_result_row),
+                "추세 제거": compact_relationship(trend_result_row),
+                "최종 판정": judgment,
+            }
         )
 
-    st.markdown("".join(factor_cards), unsafe_allow_html=True)
+    st.dataframe(
+        pd.DataFrame(summary_rows),
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "요인": st.column_config.TextColumn(width="medium"),
+            "전체 기간": st.column_config.TextColumn(width="medium"),
+            f"{before_start}–{before_end}년": st.column_config.TextColumn(width="medium"),
+            f"{after_start}–{after_end}년": st.column_config.TextColumn(width="medium"),
+            "전년 대비": st.column_config.TextColumn(width="medium"),
+            "추세 제거": st.column_config.TextColumn(width="medium"),
+            "최종 판정": st.column_config.TextColumn(width="large"),
+        },
+    )
 
-    if pd.isna(welch_p):
-        welch_conclusion = "표본 부족으로 기준 연도 전후 평균 차이를 판정할 수 없음."
-    else:
-        change_direction = "감소" if mean_change < 0 else "증가"
-        significance = "유의함" if welch_p < 0.05 else "유의하지 않음"
-        welch_conclusion = (
-            f"{test_outcome_name} 평균은 {breakpoint}년 이후 {abs(mean_change):.1f}% {change_direction}했으며 "
-            f"차이는 통계적으로 {significance} (Welch t-test, p={welch_p:.4f})."
-        )
+    conclusion_lines = [
+        f"<b>{group}:</b> {', '.join(factors)}"
+        for group, factors in conclusion_groups.items()
+        if factors
+    ]
     st.markdown(
-        f'<div class="insight"><strong>기준 연도 전후 결론</strong><br>{welch_conclusion}</div>',
+        '<div class="insight"><strong>발표 결론</strong><br>' + "<br>".join(conclusion_lines) + "</div>",
         unsafe_allow_html=True,
     )
 

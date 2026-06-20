@@ -1148,7 +1148,7 @@ with tab7:
     st.dataframe(data, width="stretch", hide_index=True)
     st.download_button(
         "현재 선택한 데이터 CSV 다운로드",
-        data.to_csv(index=False, encoding="utf-8-sig"),
+        data.to_csv(index=False).encode("utf-8-sig"),
         file_name="traffic_factor_selected.csv",
         mime="text/csv",
     )

@@ -561,8 +561,8 @@ with card2:
 with card3:
     metric_card("2016–2018 변화", f"{drop_2016_2018:.1f}%", "감소폭이 두드러진 구간")
 
-tab0, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-    ["개요", "추세", "1대1 비교", "세부 비교", "추가 원인 분석", "통계 분석", "데이터"]
+tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
+    ["개요", "추세", "1대1 비교", "세부 비교", "추가 원인 분석", "통계 분석", "결론", "데이터"]
 )
 
 with tab0:
@@ -1077,6 +1077,73 @@ with tab5:
     )
 
 with tab6:
+    section_title("교통범죄 감소를 위한 투자 우선순위")
+    st.markdown(
+        """
+        <div class="insight">
+        <strong>핵심 방향</strong><br>
+        시설 수의 단순 확대보다 범죄 다발 구간을 중심으로 단속의 실효성을 높이고, 단속 결과를 재범 방지와 연결하는 정책이 우선됨.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    investment_rows = [
+        {
+            "우선순위": "1순위",
+            "투자 요인": "집중 단속과 단속 실효성 강화",
+            "데이터 근거": "검거율은 2016–2023년에 교통범죄 발생건수와 유의한 음(-)의 관계",
+            "투자 방향": "난폭운전·상습 위반·사고 다발 지역에 단속 인력과 시간을 집중하고 적발 이후 재범 관리를 강화",
+            "판정": "최우선 검토",
+        },
+        {
+            "우선순위": "2순위",
+            "투자 요인": "구간단속의 선별적 확대",
+            "데이터 근거": "구간단속 설치 수는 2016–2023년에 교통범죄 발생건수와 유의한 음(-)의 관계",
+            "투자 방향": "전국 일괄 확대보다 과속·난폭운전 빈도가 높은 구간에 우선 설치하고 설치 전후 효과를 측정",
+            "판정": "조건부 확대",
+        },
+        {
+            "우선순위": "3순위",
+            "투자 요인": "운전자 교육과 능동형 안전기술",
+            "데이터 근거": "2016년 이후 면허시험 강화와 주행보조장치 확대 시기에 교통사고 감소 구간이 나타남",
+            "투자 방향": "돌발상황 대응 교육, 상습 위반자 재교육, 충돌방지·차로유지 기능의 보급 지원",
+            "판정": "예방 투자",
+        },
+        {
+            "우선순위": "보조",
+            "투자 요인": "일반 CCTV 확대",
+            "데이터 근거": "전체 기간 상관관계는 유의하지만 증감률과 추세 제거 분석에서는 유의하지 않음",
+            "투자 방향": "설치 대수 확대보다 사각지대와 위반 집중 지역의 위치 최적화에 활용",
+            "판정": "보조 수단",
+        },
+    ]
+    st.dataframe(
+        pd.DataFrame(investment_rows),
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "우선순위": st.column_config.TextColumn(width="small"),
+            "투자 요인": st.column_config.TextColumn(width="medium"),
+            "데이터 근거": st.column_config.TextColumn(width="large"),
+            "투자 방향": st.column_config.TextColumn(width="large"),
+            "판정": st.column_config.TextColumn(width="small"),
+        },
+    )
+
+    section_title("최종 결론")
+    st.markdown(
+        """
+        <div class="insight">
+        <strong>교통범죄 감소 가능성이 가장 높은 투자 조합</strong><br>
+        ① 범죄 다발 구간 집중 단속 → ② 구간단속 장비의 선별적 배치 → ③ 운전자 재교육과 차량 안전기술 보급의 순서로 추진.
+        일반 CCTV는 설치 대수 확대보다 위치 최적화에 집중하고, 모든 사업은 시행 전후 적발 건수·재범률·교통범죄 발생건수로 효과를 재검증.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+with tab7:
     section_title("원자료 및 출처")
     st.dataframe(data, width="stretch", hide_index=True)
     st.download_button(

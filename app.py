@@ -12,6 +12,7 @@ import streamlit as st
 BASE_DIR = Path(__file__).resolve().parent
 FACTOR_DATA_PATH = BASE_DIR / "outputs" / "traffic_factor_analysis_data_with_license.csv"
 ACCIDENT_DATA_PATH = BASE_DIR / "outputs" / "traffic_accident_merged_1980_2025.csv"
+AGE_ACCIDENT_DATA_PATH = BASE_DIR / "outputs" / "traffic_accidents_by_driver_age.csv"
 
 st.set_page_config(page_title="교통범죄 요인 분석", layout="wide")
 
@@ -95,9 +96,11 @@ st.markdown(
 
 
 @st.cache_data
-def load_data() -> pd.DataFrame:
-    factor = pd.read_csv(FACTOR_DATA_PATH, encoding="utf-8-sig")
-    accident = pd.read_csv(ACCIDENT_DATA_PATH, encoding="utf-8-sig")
+def load_data(factor_path: str, factor_modified_ns: int, accident_path: str, accident_modified_ns: int) -> pd.DataFrame:
+    # 원자료가 교체되면 캐시도 함께 갱신되도록 각 파일의 수정 시간을 사용함.
+    _ = (factor_modified_ns, accident_modified_ns)
+    factor = pd.read_csv(factor_path, encoding="utf-8-sig")
+    accident = pd.read_csv(accident_path, encoding="utf-8-sig")
     df = factor.merge(accident, on="연도", how="left")
 
     df["교통범죄 발생건수(만 건)"] = df["교통범죄 발생건수"] / 10_000
@@ -118,6 +121,22 @@ def load_data() -> pd.DataFrame:
     df["음주운전 사고율(면허 10만 명당)"] = df["음주운전_사고건수"] / license_base * 100_000
     df["뺑소니 사고율(면허 10만 명당)"] = df["뺑소니_사고건수"] / license_base * 100_000
     return df
+
+
+@st.cache_data
+def load_driver_age_accident_data(data_path: str, modified_ns: int) -> pd.DataFrame:
+    # 파일 수정 시간을 캐시 키에 포함해 데이터 교체 후 이전 파일이 재사용되지 않도록 함.
+    _ = modified_ns
+    age_data = pd.read_csv(data_path, encoding="utf-8-sig")
+    age_data["year"] = pd.to_numeric(age_data["year"], errors="coerce").astype("Int64")
+    age_data["accidents"] = pd.to_numeric(age_data["accidents"], errors="coerce")
+    age_data["age_group"] = (
+        age_data["age_group"]
+        .astype(str)
+        .str.strip()
+        .replace({"65세이상": "65세 이상", "19세이하": "19세 이하"})
+    )
+    return age_data.dropna(subset=["year", "age_group", "accidents"]).copy()
 
 
 def axis_range(series: pd.Series, pad_ratio: float = 0.12) -> list[float] | None:
@@ -320,6 +339,77 @@ def accident_count_timeline(data: pd.DataFrame) -> go.Figure:
     return fig
 
 
+def age_group_accident_timeline(age_data: pd.DataFrame) -> go.Figure:
+    age_order = ["19세 이하", "20-29세", "30-39세", "40-49세", "50-59세", "60-64세", "65세 이상"]
+    colors = {
+        "19세 이하": "#cbd5e1",
+        "20-29세": "#94a3b8",
+        "30-39세": "#64748b",
+        "40-49세": "#2f6fd0",
+        "50-59세": "#0f766e",
+        "60-64세": "#f59e0b",
+        "65세 이상": "#e84a5f",
+    }
+    fig = go.Figure()
+    for age_group in age_order:
+        group = age_data[age_data["age_group"].eq(age_group)].sort_values("year")
+        if group.empty:
+            continue
+        fig.add_trace(
+            go.Scatter(
+                x=group["year"],
+                y=group["accidents"],
+                name=age_group,
+                mode="lines+markers",
+                line=dict(color=colors[age_group], width=4 if age_group == "65세 이상" else 2.5),
+                marker=dict(size=8 if age_group == "65세 이상" else 6),
+            )
+        )
+    fig.update_layout(
+        title=dict(text="가해운전자 연령대별 교통사고", x=0.5, xanchor="center"),
+        height=520,
+        margin=dict(l=75, r=40, t=85, b=60),
+        plot_bgcolor="white",
+        hovermode="x unified",
+        legend=dict(orientation="h", y=1.11, x=0),
+        font=dict(family="Malgun Gothic, Arial", size=13),
+    )
+    fig.update_xaxes(title_text="연도", dtick=1, showgrid=True, gridcolor="#e5e7eb")
+    fig.update_yaxes(title_text="사고건수", tickformat=",", showgrid=True, gridcolor="#e5e7eb")
+    return fig
+
+
+def senior_accident_share_chart(age_data: pd.DataFrame) -> go.Figure:
+    totals = age_data.groupby("year", as_index=False)["accidents"].sum().rename(columns={"accidents": "total"})
+    seniors = (
+        age_data[age_data["age_group"].eq("65세 이상")][["year", "accidents"]]
+        .rename(columns={"accidents": "senior"})
+    )
+    chart_data = totals.merge(seniors, on="year", how="left")
+    chart_data["share"] = chart_data["senior"] / chart_data["total"] * 100
+    fig = go.Figure(
+        go.Scatter(
+            x=chart_data["year"],
+            y=chart_data["share"],
+            mode="lines+markers",
+            name="65세 이상 사고 비중",
+            line=dict(color="#e84a5f", width=3),
+            marker=dict(size=8),
+        )
+    )
+    fig.update_layout(
+        title=dict(text="전체 교통사고 중 65세 이상 가해운전자 비중", x=0.5, xanchor="center"),
+        height=390,
+        margin=dict(l=75, r=40, t=75, b=60),
+        plot_bgcolor="white",
+        hovermode="x unified",
+        font=dict(family="Malgun Gothic, Arial", size=13),
+    )
+    fig.update_xaxes(title_text="연도", dtick=1, showgrid=True, gridcolor="#e5e7eb")
+    fig.update_yaxes(title_text="65세 이상 비중(%)", ticksuffix="%", showgrid=True, gridcolor="#e5e7eb")
+    return fig
+
+
 def metric_card(label: str, value: str, note: str) -> None:
     st.markdown(
         f"""
@@ -491,8 +581,19 @@ if not FACTOR_DATA_PATH.exists():
 if not ACCIDENT_DATA_PATH.exists():
     st.error(f"세부 교통사고 데이터 파일을 찾을 수 없습니다: {ACCIDENT_DATA_PATH}")
     st.stop()
+if not AGE_ACCIDENT_DATA_PATH.exists():
+    st.error(f"가해운전자 연령대별 사고 데이터 파일을 찾을 수 없습니다: {AGE_ACCIDENT_DATA_PATH}")
+    st.stop()
 
-df = load_data()
+df = load_data(
+    str(FACTOR_DATA_PATH),
+    FACTOR_DATA_PATH.stat().st_mtime_ns,
+    str(ACCIDENT_DATA_PATH),
+    ACCIDENT_DATA_PATH.stat().st_mtime_ns,
+)
+age_accident_df = load_driver_age_accident_data(
+    str(AGE_ACCIDENT_DATA_PATH), AGE_ACCIDENT_DATA_PATH.stat().st_mtime_ns
+)
 
 with st.sidebar:
     st.header("분석 설정")
@@ -733,6 +834,48 @@ with tab4:
     st.info(
         "전체 교통사고는 2014–2015년 증가 후 2016–2017년 감소했습니다. 2018–2019년에는 다시 증가했지만 "
         "2020–2022년 연속 감소했으며, 2023년에는 소폭 증가했습니다."
+    )
+
+    section_title("가해운전자 연령대별 사고 변화")
+    st.caption("자료 범위: 경찰 교통사고 통계의 전체 가해운전자 연령대별 사고건수입니다.")
+    st.plotly_chart(age_group_accident_timeline(age_accident_df), width="stretch")
+    st.plotly_chart(senior_accident_share_chart(age_accident_df), width="stretch")
+
+    age_pivot = age_accident_df.pivot(index="year", columns="age_group", values="accidents")
+    age_totals = age_accident_df.groupby("year")["accidents"].sum()
+
+    def age_change(age_group: str, start_year: int, end_year: int) -> float:
+        return (age_pivot.loc[end_year, age_group] / age_pivot.loc[start_year, age_group] - 1) * 100
+
+    senior_share_2007 = age_pivot.loc[2007, "65세 이상"] / age_totals.loc[2007] * 100
+    senior_share_2023 = age_pivot.loc[2023, "65세 이상"] / age_totals.loc[2023] * 100
+    total_change_2015 = (age_totals.loc[2015] / age_totals.loc[2013] - 1) * 100
+    total_change_2019 = (age_totals.loc[2019] / age_totals.loc[2018] - 1) * 100
+
+    age1, age2, age3, age4 = st.columns(4)
+    age1.metric("65세 이상 2013 → 2015", f"{age_pivot.loc[2015, '65세 이상']:,.0f}건", f"{age_change('65세 이상', 2013, 2015):.1f}%")
+    age2.metric("65세 이상 2018 → 2019", f"{age_pivot.loc[2019, '65세 이상']:,.0f}건", f"{age_change('65세 이상', 2018, 2019):.1f}%")
+    age3.metric("65세 이상 사고 비중", f"{senior_share_2023:.1f}%", f"2007년 {senior_share_2007:.1f}%")
+    age4.metric("전체 사고 2018 → 2019", f"{age_totals.loc[2019]:,.0f}건", f"{total_change_2019:.1f}%")
+
+    st.markdown(
+        f"""
+        <div class="insight">
+        <strong>2013–2015년:</strong> 전체 사고는 {total_change_2015:.1f}% 증가. 같은 기간 65세 이상은
+        {age_change('65세 이상', 2013, 2015):.1f}%, 60–64세는 {age_change('60-64세', 2013, 2015):.1f}% 증가해
+        연령대 가운데 가장 큰 증가폭을 기록. 고령 운전자 사고 증가가 이 구간의 주요 구조적 요인으로 나타남.
+        </div>
+        <div class="insight">
+        <strong>2018–2019년:</strong> 모든 연령대의 사고가 증가. 65세 이상은
+        {age_change('65세 이상', 2018, 2019):.1f}%, 60–64세는 {age_change('60-64세', 2018, 2019):.1f}% 증가해
+        전체 증가율 {total_change_2019:.1f}%를 상회. 고령 운전자 사고 증가가 전체 상승폭을 확대한 것으로 나타남.
+        </div>
+        <div class="insight">
+        <strong>장기 변화:</strong> 전체 사고 중 65세 이상 가해운전자 비중은 2007년 {senior_share_2007:.1f}%에서
+        2023년 {senior_share_2023:.1f}%로 상승. 60–64세 사고도 장기적으로 증가해 고령 운전자 안전대책의 중요성이 확대됨.
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
     section_title("시기별 주요 변화와 해석")
@@ -1114,12 +1257,13 @@ with tab5:
     )
 
 with tab6:
-    section_title("교통범죄 감소를 위한 투자 우선순위")
+    section_title("교통범죄·교통사고 감소를 위한 정책 우선순위")
     st.markdown(
         """
         <div class="insight">
         <strong>핵심 방향</strong><br>
-        시설 수의 단순 확대보다 범죄 다발 구간을 중심으로 단속의 실효성을 높이고, 단속 결과를 재범 방지와 연결하는 정책이 우선됨.
+        교통범죄는 범죄 다발 구간의 단속 실효성 강화, 교통사고는 고령 운전자 중심의 예방정책으로 구분해 추진.
+        시설의 단순 확대보다 위험 구간과 위험 집단을 선별하고 시행 전후 효과를 검증하는 방식이 우선됨.
         </div>
         """,
         unsafe_allow_html=True,
@@ -1142,9 +1286,9 @@ with tab6:
         },
         {
             "우선순위": "3순위",
-            "투자 요인": "운전자 교육과 능동형 안전기술",
-            "데이터 근거": "2016년 이후 면허시험 강화와 주행보조장치 확대 시기에 교통사고 감소 구간이 나타남",
-            "투자 방향": "돌발상황 대응 교육, 상습 위반자 재교육, 충돌방지·차로유지 기능의 보급 지원",
+            "투자 요인": "고령 운전자 예방교육과 능동형 안전기술",
+            "데이터 근거": "65세 이상 가해운전자 사고 비중이 2007년 3.9%에서 2023년 20.0%로 상승",
+            "투자 방향": "고령 운전자 맞춤형 안전교육과 운전능력 점검을 강화하고 충돌방지·차로유지 기능의 보급을 지원",
             "판정": "예방 투자",
         },
         {
@@ -1172,16 +1316,17 @@ with tab6:
     st.markdown(
         """
         <div class="insight">
-        <strong>교통범죄 감소 가능성이 가장 높은 투자 조합</strong><br>
-        ① 범죄 다발 구간 집중 단속 → ② 구간단속 장비의 선별적 배치 → ③ 운전자 재교육과 차량 안전기술 보급의 순서로 추진.
-        일반 CCTV는 설치 대수 확대보다 위치 최적화에 집중하고, 모든 사업은 시행 전후 적발 건수·재범률·교통범죄 발생건수로 효과를 재검증.
+        <strong>자료를 통해 우선 검토할 정책 조합</strong><br>
+        교통범죄 대책은 ① 범죄 다발 구간 집중 단속과 ② 구간단속 장비의 선별적 배치를 중심으로 구성.
+        교통사고 대책은 사고 비중이 빠르게 증가한 65세 이상 운전자를 대상으로 안전교육·운전능력 점검·능동형 안전기술 지원을 병행.
+        일반 CCTV는 설치 대수보다 위치 최적화에 집중하고, 모든 사업은 시행 전후 교통범죄 발생건수·사고건수·재범률을 비교해 확대 여부를 결정.
         </div>
         """,
         unsafe_allow_html=True,
     )
 
 with tab7:
-    section_title("원자료 및 출처")
+    section_title("교통범죄·교통사고 원자료")
     st.dataframe(data, width="stretch", hide_index=True)
     st.download_button(
         "현재 선택한 데이터 CSV 다운로드",
@@ -1189,4 +1334,21 @@ with tab7:
         file_name="traffic_factor_selected.csv",
         mime="text/csv",
     )
-    st.caption("자료 출처: 경찰청 범죄통계, 공공데이터포털 CCTV 및 단속 관련 데이터, 교통사고 통계 자료. 공공데이터 이용허락범위: 저작자표시(CC BY)")
+    section_title("가해운전자 연령대별 사고 원자료")
+    age_display_df = age_accident_df.rename(
+        columns={
+            "year": "연도",
+            "age_group": "연령대",
+            "accidents": "발생건수",
+            "deaths": "사망자수",
+            "injuries": "부상자수",
+        }
+    )
+    st.dataframe(age_display_df, width="stretch", hide_index=True)
+    st.download_button(
+        "가해운전자 연령대별 사고 CSV 다운로드",
+        age_display_df.to_csv(index=False).encode("utf-8-sig"),
+        file_name="traffic_accidents_by_driver_age.csv",
+        mime="text/csv",
+    )
+    st.caption("자료 출처: 경찰청 범죄통계, 공공데이터포털 CCTV 및 단속 관련 데이터, 가해운전자 연령대별 교통사고 통계. 공공데이터 이용허락범위: 저작자표시(CC BY)")
